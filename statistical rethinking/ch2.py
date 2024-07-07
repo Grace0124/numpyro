@@ -1,7 +1,11 @@
 import jax.numpy as jnp
+from jax import random
 
 import numpyro
 import numpyro.distributions as dist
+from numpyro.infer.autoguide import AutoLaplaceApproximation
+import numpyro.optim as optim
+from numpyro.infer import SVI, Trace_ELBO
 
 import matplotlib.pyplot as plt
 import arviz as az
@@ -29,4 +33,20 @@ plt.title("20 points")
 # plt.show()
 
 ### II. QUADRATIC APPROXIMATION
+
+def model(W, L):
+    p = numpyro.sample("p", dist.Uniform(0,1)) # uniform prior
+    numpyro.sample("W", dist.Binomial(W+L, p), obs=W) # binomial likelihood
+
+guide = AutoLaplaceApproximation(model) # approiximates posterior using a Laplace approximation
+svi = SVI(model, guide, optim.Adam(1), Trace_ELBO(), W=6, L=3) # stochastic variational inference
+svi_result = svi.run(random.PRNGKey(0), 1000) # run SVI optimization for 1000 iterations
+params = svi_result.params
+
+# displaying results
+samples = guide.sample_posterior(random.PRNGKey(1), params, sample_shape=(1000,))
+numpyro.diagnostics.print_summary(samples, prob=0.89, group_by_chain=False)
+# print results: mean = 0.62, std = 0.14
+# interpretation: assuming posterior is Gaussian, it is maximized at 0.67 and has stdev 0.14
+
 
