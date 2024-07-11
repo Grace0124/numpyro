@@ -121,3 +121,4 @@ chart_patient_with_predictions("ID00009637202177434476278", axes[1])
 chart_patient_with_predictions("ID00011637202177653955184", axes[2])
 
 plt.show()
+

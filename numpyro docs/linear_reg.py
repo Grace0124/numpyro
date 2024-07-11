@@ -14,11 +14,10 @@ import numpyro
 from numpyro import handlers
 from numpyro.diagnostics import hpdi
 import numpyro.distributions as dist
-from numpyro.infer import MCMC, NUTS
+from numpyro.infer import MCMC, NUTS, Predictive
 
 DATASET_URL = "https://raw.githubusercontent.com/rmcelreath/rethinking/master/data/WaffleDivorce.csv"
 dset = pd.read_csv(DATASET_URL, sep=";")
-
 vars = [
     "Population",
     "MedianAgeMarriage",
@@ -28,14 +27,15 @@ vars = [
     "Divorce",
 ]
 
+### PREDICTING DIVORCE RATES
+#### I. MARRIAGE RATE
+
 # normalize to N(0,1) for faster results
 def standardize(x):
     return (x-x.mean())/x.std()
-
 dset["AgeScaled"] = standardize(dset.MedianAgeMarriage)
 dset["MarriageScaled"] = standardize(dset.Marriage)
 dset["DivorceScaled"] = standardize(dset.Divorce)
-
 
 
 def model(marriage=None, age=None, divorce=None):
@@ -51,11 +51,9 @@ def model(marriage=None, age=None, divorce=None):
     mu = a + M + A
     numpyro.sample("obs", dist.Normal(mu, sigma), obs=divorce)
 
-
 rng_key = random.PRNGKey(0)
 rng_key, rng_key_ = random.split(rng_key) # splits the rng key into two independent rng keys
 
-# Run NUTS.
 mcmc = MCMC(
     NUTS(model), 
     num_warmup=1000, 
@@ -63,11 +61,8 @@ mcmc = MCMC(
 mcmc.run(
     rng_key_, marriage=dset.MarriageScaled.values, divorce=dset.DivorceScaled.values
 )
-
-
 mcmc.print_summary() # prints quartiles, eff sample size, r-hat
 samples_1 = mcmc.get_samples() 
-print(samples_1)
 
 # check results by plotting the regression line
 def plot_regression(x, y_mean, y_hpdi):
@@ -91,7 +86,6 @@ def plot_regression(x, y_mean, y_hpdi):
     ax.fill_between(marriage, hpdi[0], hpdi[1], alpha=0.3, interpolate=True) # fill in area btwn lower and upper bounds of the confidence interval
     return ax
 
-
 posterior_mu = (
     # expand_dims adds a new axis to the arrays... not sure why lol
     # perhaps so that the multiplication with dset.MarriageScaled has the right dimensions??
@@ -105,16 +99,29 @@ ax = plot_regression(dset.MarriageScaled.values, mean_mu, hpdi_mu)
 ax.set(
     xlabel="Marriage rate", ylabel="Divorce rate", title="Regression line with 90% CI"
 );
-plt.show()
+# plt.show()
 
-# Sample from prior predictive distribution
+# Prior predictive distribution
 from numpyro.infer import Predictive
-
 rng_key, rng_key_ = random.split(rng_key)
 prior_predictive = Predictive(model, num_samples=100) # a predictive distribution sampler
 prior_predictions = prior_predictive(rng_key_, marriage=dset.MarriageScaled.values)["obs"] # draws samples from prior predictive using the rng key 
 mean_prior_pred = jnp.mean(prior_predictions, axis=0)
 hpdi_prior_pred = hpdi(prior_predictions, 0.9)
-
 ax = plot_regression(dset.MarriageScaled.values, mean_prior_pred, hpdi_prior_pred)
-plt.show()
+ax.set(xlabel="Marriage rate", ylabel="Divorce rate", title="Predictions with 90% CI")
+# plt.show()
+
+# Posterior predictive distribution
+predictive = Predictive(model, samples_1)
+predictions = predictive(rng_key_, marriage=dset.MarriageScaled.values)["obs"]
+df = dset.filter(["Location"])
+df["Mean Predictions"] = jnp.mean(predictions, axis=0)
+hpdi_pred = hpdi(predictions, 0.9)
+ax = plot_regression(dset.MarriageScaled.values, df["Mean Predictions"], hpdi_pred)
+ax.set(xlabel="Marriage rate", ylabel="Divorce rate", title="Predictions with 90% CI")
+
+#### II. MEDIAN AGE OF MARRIAGE
+plt.clf()
+mcmc.run(rng_key_, age=dset.AgeScaled.values, divorce=dset.DivorceScaled.values)
+samples_2 = mcmc.get_samples()

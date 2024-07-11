@@ -24,7 +24,6 @@ def linear_model(x, y):
     m = numpyro.sample("slope", dist.Normal(0.5, 0.25))
     b = numpyro.sample("intercept", dist.Normal(25, 5))
     sigma = numpyro.sample("sigma", dist.HalfCauchy(10))
-
     numpyro.sample("y", dist.Normal(m*x+b, sigma), obs=y)
 
 
@@ -36,5 +35,4 @@ sampler = MCMC(
     progress_bar=True
 )
 sampler.run(jax.random.PRNGKey(0), xdata, ydata)
-
 sampler.print_summary()
